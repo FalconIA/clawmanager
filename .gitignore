@@ -32,6 +32,7 @@ lerna-debug.log*
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+.history
 .idea
 .DS_Store
 *.suo
@@ -65,3 +66,6 @@ AGENTS.md
 TASK_BREAKDOWN.md
 dev_progress.md
 CLAUDE.md
+
+# Analysis documents
+docs/analysis/

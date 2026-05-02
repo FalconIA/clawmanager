@@ -1,0 +1,3 @@
+[submodule "runtimes/openclaw-image"]
+	path = runtimes/openclaw-image
+	url = git@github.com:FalconIA/clawmanager-openclaw-image.git
