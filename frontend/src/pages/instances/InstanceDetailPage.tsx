@@ -823,6 +823,40 @@ const InstanceDetailPage: React.FC = () => {
                   ? `${t("common.restart")}...`
                   : t("common.restart")}
               </button>
+              {canControlGateway && (
+                <>
+                  {gatewayStatus === "running" ? (
+                    <button
+                      onClick={() => handleRuntimeCommand("stop")}
+                      disabled={!!actionLoading}
+                      className="rounded-2xl border border-transparent bg-yellow-100 px-4 py-2 text-sm font-medium text-yellow-700 hover:bg-yellow-200 disabled:opacity-50"
+                    >
+                      {actionLoading === "runtime-stop"
+                        ? `${t("common.stopRuntime")}...`
+                        : t("common.stopRuntime")}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleRuntimeCommand("start")}
+                      disabled={!!actionLoading}
+                      className="rounded-2xl border border-transparent bg-green-100 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-200 disabled:opacity-50"
+                    >
+                      {actionLoading === "runtime-start"
+                        ? `${t("common.startRuntime")}...`
+                        : t("common.startRuntime")}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRuntimeCommand("restart")}
+                    disabled={!!actionLoading}
+                    className="app-button-secondary disabled:opacity-50"
+                  >
+                    {actionLoading === "runtime-restart"
+                      ? `${t("common.restartRuntime")}...`
+                      : t("common.restartRuntime")}
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => setShowDeleteDialog(true)}
                 disabled={actionLoading === "delete"}
