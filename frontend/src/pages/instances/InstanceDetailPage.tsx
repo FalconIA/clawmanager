@@ -5,16 +5,19 @@ import { InstanceAccess } from "../../components/InstanceAccess";
 import UserLayout from "../../components/UserLayout";
 import { useI18n } from "../../contexts/I18nContext";
 import { instanceService } from "../../services/instanceService";
+import { openclawConfigService } from "../../services/openclawConfigService";
 import { skillService } from "../../services/skillService";
 import type {
   AgentInfo,
   Instance,
+  InstanceChannelsResult,
   InstanceRuntimeCommand,
   InstanceRuntimeDetails,
   InstanceStatus,
   RuntimeStatus,
 } from "../../types/instance";
 import type { InstanceSkill, Skill } from "../../types/skill";
+import type { OpenClawConfigResource } from "../../types/openclawConfig";
 
 const META_POLL_INTERVAL_MS = 8000;
 const RUNTIME_POLL_INTERVAL_MS = 5000;
@@ -27,6 +30,9 @@ const supportsRuntimeWorkspace = (type: string) =>
   type === "openclaw" || type === "hermes";
 
 const supportsRuntimeSkillManagement = (type: string) =>
+  type === "openclaw" || type === "hermes";
+
+const supportsRuntimeConfigInjection = (type: string) =>
   type === "openclaw" || type === "hermes";
 
 const runtimeWorkspaceDirectory = (type: string) =>
@@ -197,6 +203,9 @@ const InstanceDetailPage: React.FC = () => {
   const [availableSkills, setAvailableSkills] = useState<Skill[]>([]);
   const [selectedSkillId, setSelectedSkillId] = useState<number | "">("");
   const [instanceSkillPage, setInstanceSkillPage] = useState(1);
+  const [instanceChannels, setInstanceChannels] = useState<InstanceChannelsResult | null>(null);
+  const [availableChannels, setAvailableChannels] = useState<OpenClawConfigResource[]>([]);
+  const [selectedChannelIds, setSelectedChannelIds] = useState<number[]>([]);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const timelineScrollRef = useRef<HTMLDivElement | null>(null);
   const timelineItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -348,6 +357,60 @@ const InstanceDetailPage: React.FC = () => {
     };
     void loadSkills();
   }, [instanceId]);
+
+  const loadChannels = useCallback(async () => {
+    if (!instanceId || Number.isNaN(instanceId)) {
+      return;
+    }
+    try {
+      const [channelsResult, allChannels] = await Promise.all([
+        instanceService.getInstanceChannels(instanceId),
+        openclawConfigService.listResources("channel"),
+      ]);
+      setInstanceChannels(channelsResult);
+      setAvailableChannels(allChannels);
+    } catch (channelError) {
+      console.error("Failed to load channel data", channelError);
+    }
+  }, [instanceId]);
+
+  useEffect(() => {
+    void loadChannels();
+  }, [loadChannels]);
+
+  const handleUpdateChannels = async () => {
+    if (!instanceId || Number.isNaN(instanceId)) {
+      return;
+    }
+    try {
+      setActionLoading("update-channels");
+      await instanceService.updateInstanceChannels(instanceId, selectedChannelIds);
+      setSelectedChannelIds([]);
+      await loadChannels();
+    } catch (err: any) {
+      alert(err.response?.data?.error || t("instances.failedToUpdateChannels"));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRemoveChannel = async (channelResourceId: number) => {
+    if (!instanceId || Number.isNaN(instanceId) || !instanceChannels) {
+      return;
+    }
+    try {
+      setActionLoading(`remove-channel-${channelResourceId}`);
+      const remaining = instanceChannels.channels
+        .filter((ch) => ch.id !== channelResourceId)
+        .map((ch) => ch.id);
+      await instanceService.updateInstanceChannels(instanceId, remaining);
+      await loadChannels();
+    } catch (err: any) {
+      alert(err.response?.data?.error || t("instances.failedToUpdateChannels"));
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   useEffect(() => {
     setInstanceSkillPage(1);
@@ -1010,6 +1073,89 @@ const InstanceDetailPage: React.FC = () => {
                 />
               </div>
             </section>
+
+            {supportsRuntimeConfigInjection(instance.type) && (
+              <section className="app-panel px-6 py-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#b09d93]">
+                      {t("instances.channelSection")}
+                    </p>
+                    <h2 className="mt-2 text-[1.5rem] font-semibold tracking-[-0.03em] text-[#1d1713]">
+                      {t("instances.channelManagement")}
+                    </h2>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={selectedChannelIds[0] ?? ""}
+                      title={t("instances.selectChannel")}
+                      onChange={(e) =>
+                        setSelectedChannelIds(e.target.value ? [Number(e.target.value)] : [])
+                      }
+                      className="app-input min-w-[220px]"
+                    >
+                      <option value="">{t("instances.selectChannel")}</option>
+                      {availableChannels.map((ch) => (
+                        <option key={ch.id} value={ch.id}>
+                          {ch.name} ({ch.resource_key})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void handleUpdateChannels()}
+                      disabled={selectedChannelIds.length === 0 || actionLoading === "update-channels"}
+                      className="app-button-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {actionLoading === "update-channels"
+                        ? t("instances.updating")
+                        : t("instances.configureChannel")}
+                    </button>
+                  </div>
+                </div>
+
+                {instanceChannels?.channels && instanceChannels.channels.length > 0 ? (
+                  <div className="mt-5 space-y-3">
+                    {instanceChannels.channels.map((ch) => (
+                      <div
+                        key={ch.id}
+                        className="rounded-[22px] border border-[#efe2d8] bg-[#fffaf7] px-5 py-4 shadow-[0_20px_40px_-36px_rgba(72,44,24,0.42)]"
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-base font-semibold text-[#1d1713]">{ch.name}</span>
+                              <span className="rounded-full border border-[#ead8cf] bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8f776b]">
+                                v{ch.version}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm text-[#6f6158]">{ch.resource_key}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleRemoveChannel(ch.id)}
+                            disabled={!!actionLoading}
+                            className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {actionLoading === `remove-channel-${ch.id}`
+                              ? t("instances.removing")
+                              : t("instances.removeChannel")}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-[22px] border border-dashed border-[#e7d9d1] bg-[#fffaf7] px-5 py-6 text-sm text-[#7a6d66]">
+                    {t("instances.noChannelsConfigured")}
+                  </div>
+                )}
+
+                <p className="mt-3 text-xs text-amber-600">
+                  ⚠ {t("instances.channelRestartNote")}
+                </p>
+              </section>
+            )}
 
             {supportsRuntimeSkillManagement(instance.type) && (
               <section className="app-panel px-6 py-6">

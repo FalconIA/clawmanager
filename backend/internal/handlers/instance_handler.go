@@ -653,6 +653,46 @@ func (h *InstanceHandler) PublishConfigRevision(c *gin.Context) {
 	})
 }
 
+func (h *InstanceHandler) GetInstanceChannels(c *gin.Context) {
+	_, instance, ok := h.resolveOwnedInstance(c)
+	if !ok {
+		return
+	}
+
+	userID, _ := c.Get("userID")
+	result, err := h.instanceService.GetChannels(userID.(int), instance.ID)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, http.StatusOK, "Instance channels retrieved successfully", result)
+}
+
+type UpdateInstanceChannelsRequest struct {
+	ResourceIDs []int `json:"resource_ids" binding:"required"`
+}
+
+func (h *InstanceHandler) UpdateInstanceChannels(c *gin.Context) {
+	_, instance, ok := h.resolveOwnedInstance(c)
+	if !ok {
+		return
+	}
+
+	var req UpdateInstanceChannelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ValidationError(c, err)
+		return
+	}
+
+	userID, _ := c.Get("userID")
+	snapshot, err := h.instanceService.UpdateChannels(userID.(int), instance.ID, req.ResourceIDs)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, http.StatusOK, "Instance channels updated successfully. Restart the instance for changes to take effect.", snapshot)
+}
+
 func (h *InstanceHandler) resolveOwnedInstance(c *gin.Context) (int, *models.Instance, bool) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {

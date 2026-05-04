@@ -18,6 +18,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// InstanceChannelsResult holds the channel configuration for an instance.
+type InstanceChannelsResult struct {
+	SnapshotID *int                            `json:"snapshot_id"`
+	Channels   []OpenClawConfigResourceSummary `json:"channels"`
+}
+
 // InstanceService defines the interface for instance operations
 type InstanceService interface {
 	Create(userID int, req CreateInstanceRequest) (*models.Instance, error)
@@ -31,6 +37,8 @@ type InstanceService interface {
 	Update(instanceID int, req UpdateInstanceRequest) error
 	GetInstanceStatus(instanceID int) (*InstanceStatus, error)
 	ForceSyncInstance(instanceID int) error
+	GetChannels(userID, instanceID int) (*InstanceChannelsResult, error)
+	UpdateChannels(userID, instanceID int, channelResourceIDs []int) (*models.OpenClawInjectionSnapshot, error)
 }
 
 // CreateInstanceRequest holds data for creating an instance
@@ -226,27 +234,27 @@ func (s *instanceService) Create(userID int, req CreateInstanceRequest) (*models
 	}
 
 	if _, err := s.ensureGatewayToken(instance); err != nil {
-		s.instanceRepo.Delete(instance.ID)
+		_ = s.instanceRepo.Delete(instance.ID)
 		return nil, fmt.Errorf("failed to provision instance gateway token: %w", err)
 	}
 	if _, err := s.ensureAgentBootstrapToken(instance); err != nil {
-		s.instanceRepo.Delete(instance.ID)
+		_ = s.instanceRepo.Delete(instance.ID)
 		return nil, fmt.Errorf("failed to provision instance agent bootstrap token: %w", err)
 	}
 
 	gatewayEnv, err := s.buildGatewayEnv(instance)
 	if err != nil {
-		s.instanceRepo.Delete(instance.ID)
+		_ = s.instanceRepo.Delete(instance.ID)
 		return nil, fmt.Errorf("failed to build instance gateway config: %w", err)
 	}
 	agentEnv, err := s.buildAgentEnv(instance)
 	if err != nil {
-		s.instanceRepo.Delete(instance.ID)
+		_ = s.instanceRepo.Delete(instance.ID)
 		return nil, fmt.Errorf("failed to build instance agent config: %w", err)
 	}
 	extraEnv, err := buildInstancePodEnv(instance, runtimeConfig.Env, gatewayEnv, agentEnv)
 	if err != nil {
-		s.instanceRepo.Delete(instance.ID)
+		_ = s.instanceRepo.Delete(instance.ID)
 		return nil, fmt.Errorf("failed to resolve instance environment: %w", err)
 	}
 
@@ -255,21 +263,21 @@ func (s *instanceService) Create(userID int, req CreateInstanceRequest) (*models
 	if supportsRuntimeConfigInjection(instance.Type) && s.openClawConfigService != nil && req.OpenClawConfigPlan != nil && hasOpenClawConfigSelections(*req.OpenClawConfigPlan) {
 		bootstrapSnapshot, err = s.openClawConfigService.CreateSnapshotForInstance(userID, instance, req.OpenClawConfigPlan)
 		if err != nil {
-			s.instanceRepo.Delete(instance.ID)
+			_ = s.instanceRepo.Delete(instance.ID)
 			return nil, fmt.Errorf("failed to compile runtime bootstrap config: %w", err)
 		}
 		if bootstrapSnapshot != nil {
 			instance.OpenClawConfigSnapshotID = &bootstrapSnapshot.ID
 			instance.UpdatedAt = time.Now()
 			if err := s.instanceRepo.Update(instance); err != nil {
-				s.instanceRepo.Delete(instance.ID)
+				_ = s.instanceRepo.Delete(instance.ID)
 				return nil, fmt.Errorf("failed to persist runtime snapshot reference: %w", err)
 			}
 
 			bootstrapSecretName, err = s.openClawConfigService.EnsureSnapshotSecret(ctx, userID, instance, bootstrapSnapshot.ID)
 			if err != nil {
 				_ = s.openClawConfigService.MarkSnapshotFailed(bootstrapSnapshot, err)
-				s.instanceRepo.Delete(instance.ID)
+				_ = s.instanceRepo.Delete(instance.ID)
 				return nil, fmt.Errorf("failed to provision runtime bootstrap secret: %w", err)
 			}
 		}
@@ -286,18 +294,18 @@ func (s *instanceService) Create(userID int, req CreateInstanceRequest) (*models
 		if bootstrapSnapshot != nil {
 			_ = s.openClawConfigService.MarkSnapshotFailed(bootstrapSnapshot, err)
 		}
-		s.instanceRepo.Delete(instance.ID)
+		_ = s.instanceRepo.Delete(instance.ID)
 		return nil, fmt.Errorf("failed to create PVC: %w", err)
 	}
 
 	// Ensure any legacy per-instance network policy is removed before creating pod.
 	// This keeps new pods unrestricted even if older versions created netpols.
 	if err := s.networkPolicyService.DeletePolicy(ctx, userID, instance.ID, instance.Name); err != nil {
-		s.pvcService.DeletePVC(ctx, userID, instance.ID)
+		_ = s.pvcService.DeletePVC(ctx, userID, instance.ID)
 		if bootstrapSnapshot != nil {
 			_ = s.openClawConfigService.MarkSnapshotFailed(bootstrapSnapshot, err)
 		}
-		s.instanceRepo.Delete(instance.ID)
+		_ = s.instanceRepo.Delete(instance.ID)
 		return nil, fmt.Errorf("failed to delete network policy: %w", err)
 	}
 
@@ -322,11 +330,11 @@ func (s *instanceService) Create(userID int, req CreateInstanceRequest) (*models
 	pod, err := s.podService.CreatePod(ctx, podConfig)
 	if err != nil {
 		// Rollback: delete PVC and instance record
-		s.pvcService.DeletePVC(ctx, userID, instance.ID)
+		_ = s.pvcService.DeletePVC(ctx, userID, instance.ID)
 		if bootstrapSnapshot != nil {
 			_ = s.openClawConfigService.MarkSnapshotFailed(bootstrapSnapshot, err)
 		}
-		s.instanceRepo.Delete(instance.ID)
+		_ = s.instanceRepo.Delete(instance.ID)
 		return nil, fmt.Errorf("failed to create pod: %w", err)
 	}
 
@@ -342,12 +350,12 @@ func (s *instanceService) Create(userID int, req CreateInstanceRequest) (*models
 	serviceInfo, err := s.serviceService.CreateService(ctx, serviceConfig)
 	if err != nil {
 		// Rollback: delete pod, PVC and instance record
-		s.podService.DeletePod(ctx, userID, instance.ID)
-		s.pvcService.DeletePVC(ctx, userID, instance.ID)
+		_ = s.podService.DeletePod(ctx, userID, instance.ID)
+		_ = s.pvcService.DeletePVC(ctx, userID, instance.ID)
 		if bootstrapSnapshot != nil {
 			_ = s.openClawConfigService.MarkSnapshotFailed(bootstrapSnapshot, err)
 		}
-		s.instanceRepo.Delete(instance.ID)
+		_ = s.instanceRepo.Delete(instance.ID)
 		return nil, fmt.Errorf("failed to create service: %w", err)
 	}
 
@@ -816,62 +824,6 @@ func (s *instanceService) completeDeletion(userID, instanceID int) {
 	fmt.Printf("Instance %d deleted successfully\n", instanceID)
 }
 
-// cleanupOrphanedResources cleans up any orphaned K8s resources for an instance
-func (s *instanceService) cleanupOrphanedResources(ctx context.Context, userID, instanceID int) error {
-	namespace := s.pvcService.GetClient().GetNamespace(userID)
-	instanceLabel := fmt.Sprintf("%d", instanceID)
-	client := s.pvcService.GetClient().Clientset
-
-	// Check if namespace has other instances' pods
-	allPods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "managed-by=clawreef",
-	})
-	if err == nil {
-		otheInstanceCount := 0
-		for _, pod := range allPods.Items {
-			if pod.Labels["instance-id"] != instanceLabel {
-				otheInstanceCount++
-			}
-		}
-		fmt.Printf("Namespace %s has %d other instance(s), will not delete namespace\n", namespace, otheInstanceCount)
-	}
-
-	// List and delete ConfigMaps with instance label
-	configMaps, err := client.CoreV1().ConfigMaps(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("instance-id=%s", instanceLabel),
-	})
-	if err == nil && len(configMaps.Items) > 0 {
-		for _, cm := range configMaps.Items {
-			fmt.Printf("Deleting orphaned ConfigMap %s\n", cm.Name)
-			client.CoreV1().ConfigMaps(namespace).Delete(ctx, cm.Name, metav1.DeleteOptions{})
-		}
-	}
-
-	// List and delete Secrets with instance label
-	secrets, err := client.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("instance-id=%s", instanceLabel),
-	})
-	if err == nil && len(secrets.Items) > 0 {
-		for _, secret := range secrets.Items {
-			fmt.Printf("Deleting orphaned Secret %s\n", secret.Name)
-			client.CoreV1().Secrets(namespace).Delete(ctx, secret.Name, metav1.DeleteOptions{})
-		}
-	}
-
-	// List and delete Services with instance label
-	services, err := client.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("instance-id=%s", instanceLabel),
-	})
-	if err == nil && len(services.Items) > 0 {
-		for _, svc := range services.Items {
-			fmt.Printf("Deleting orphaned Service %s\n", svc.Name)
-			client.CoreV1().Services(namespace).Delete(ctx, svc.Name, metav1.DeleteOptions{})
-		}
-	}
-
-	return nil
-}
-
 // cleanupOrphanedResourcesByUser cleans up any orphaned resources for a user that don't have corresponding DB records
 func (s *instanceService) cleanupOrphanedResourcesByUser(ctx context.Context, userID int) {
 	namespace := s.pvcService.GetClient().GetNamespace(userID)
@@ -894,7 +846,7 @@ func (s *instanceService) cleanupOrphanedResourcesByUser(ctx context.Context, us
 		}
 
 		instanceID := 0
-		fmt.Sscanf(instanceIDStr, "%d", &instanceID)
+		_, _ = fmt.Sscanf(instanceIDStr, "%d", &instanceID)
 
 		// Check if instance exists in DB
 		instance, err := s.instanceRepo.GetByID(instanceID)
@@ -923,7 +875,7 @@ func (s *instanceService) cleanupOrphanedResourcesByUser(ctx context.Context, us
 		}
 
 		instanceID := 0
-		fmt.Sscanf(instanceIDStr, "%d", &instanceID)
+		_, _ = fmt.Sscanf(instanceIDStr, "%d", &instanceID)
 
 		// Check if instance exists in DB
 		instance, err := s.instanceRepo.GetByID(instanceID)
@@ -935,7 +887,7 @@ func (s *instanceService) cleanupOrphanedResourcesByUser(ctx context.Context, us
 			}
 			// Also try to delete the associated PV
 			if pvc.Spec.VolumeName != "" {
-				client.CoreV1().PersistentVolumes().Delete(ctx, pvc.Spec.VolumeName, metav1.DeleteOptions{})
+				_ = client.CoreV1().PersistentVolumes().Delete(ctx, pvc.Spec.VolumeName, metav1.DeleteOptions{})
 			}
 		}
 	}
@@ -955,7 +907,7 @@ func (s *instanceService) cleanupOrphanedResourcesByUser(ctx context.Context, us
 		}
 
 		instanceID := 0
-		fmt.Sscanf(instanceIDStr, "%d", &instanceID)
+		_, _ = fmt.Sscanf(instanceIDStr, "%d", &instanceID)
 
 		instance, err := s.instanceRepo.GetByID(instanceID)
 		if err != nil || instance == nil {
@@ -1138,14 +1090,156 @@ func (s *instanceService) ForceSyncInstance(instanceID int) error {
 	return nil
 }
 
+func (s *instanceService) GetChannels(userID, instanceID int) (*InstanceChannelsResult, error) {
+	instance, err := s.instanceRepo.GetByID(instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance: %w", err)
+	}
+	if instance == nil || instance.UserID != userID {
+		return nil, fmt.Errorf("instance not found")
+	}
+
+	result := &InstanceChannelsResult{
+		SnapshotID: instance.OpenClawConfigSnapshotID,
+		Channels:   []OpenClawConfigResourceSummary{},
+	}
+
+	if instance.OpenClawConfigSnapshotID == nil || s.openClawConfigService == nil {
+		return result, nil
+	}
+
+	snap, err := s.openClawConfigService.GetSnapshotModel(userID, *instance.OpenClawConfigSnapshotID)
+	if err != nil || snap == nil {
+		return result, nil
+	}
+
+	var resolved []OpenClawConfigResourceSummary
+	if err := json.Unmarshal([]byte(snap.ResolvedResourcesJSON), &resolved); err != nil {
+		return result, nil
+	}
+
+	for _, r := range resolved {
+		if r.ResourceType == OpenClawConfigResourceTypeChannel {
+			result.Channels = append(result.Channels, r)
+		}
+	}
+	return result, nil
+}
+
+func (s *instanceService) UpdateChannels(userID, instanceID int, channelResourceIDs []int) (*models.OpenClawInjectionSnapshot, error) {
+	ctx := context.Background()
+
+	instance, err := s.instanceRepo.GetByID(instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance: %w", err)
+	}
+	if instance == nil || instance.UserID != userID {
+		return nil, fmt.Errorf("instance not found")
+	}
+	if !supportsRuntimeConfigInjection(instance.Type) {
+		return nil, fmt.Errorf("instance type does not support config injection")
+	}
+
+	// Step 1: extract non-channel resource IDs from existing snapshot
+	nonChannelIDs := []int{}
+	existingChannelMap := map[string]int{} // key → id
+	if instance.OpenClawConfigSnapshotID != nil && s.openClawConfigService != nil {
+		snap, err := s.openClawConfigService.GetSnapshotModel(userID, *instance.OpenClawConfigSnapshotID)
+		if err == nil && snap != nil {
+			var resolved []OpenClawConfigResourceSummary
+			if err := json.Unmarshal([]byte(snap.ResolvedResourcesJSON), &resolved); err == nil {
+				for _, r := range resolved {
+					if r.ResourceType == OpenClawConfigResourceTypeChannel {
+						existingChannelMap[r.ResourceKey] = r.ID
+					} else {
+						nonChannelIDs = append(nonChannelIDs, r.ID)
+					}
+				}
+			}
+		}
+	}
+
+	// Step 2: resolve new channel resource keys, new entry overwrites same key
+	channelMap := map[string]int{}
+	for k, v := range existingChannelMap {
+		channelMap[k] = v
+	}
+	for _, rid := range channelResourceIDs {
+		resource, err := s.openClawConfigService.GetResource(userID, rid)
+		if err != nil {
+			return nil, fmt.Errorf("channel resource %d not found: %w", rid, err)
+		}
+		if resource.ResourceType != OpenClawConfigResourceTypeChannel {
+			return nil, fmt.Errorf("resource %d is not a channel resource", rid)
+		}
+		channelMap[resource.ResourceKey] = rid
+	}
+
+	// Step 3: build merged resource ID list
+	mergedIDs := append([]int{}, nonChannelIDs...)
+	for _, id := range channelMap {
+		mergedIDs = append(mergedIDs, id)
+	}
+
+	var plan *OpenClawConfigPlan
+	if len(mergedIDs) > 0 {
+		plan = &OpenClawConfigPlan{Mode: OpenClawConfigPlanModeManual, ResourceIDs: mergedIDs}
+	} else {
+		plan = &OpenClawConfigPlan{Mode: OpenClawConfigPlanModeNone}
+	}
+
+	// Step 4: compile snapshot + update K8s secret
+	newSnapshot, err := s.openClawConfigService.CreateSnapshotForInstance(userID, instance, plan)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile config snapshot: %w", err)
+	}
+	if newSnapshot == nil {
+		// mode=none returns nil snapshot; clear the reference
+		instance.OpenClawConfigSnapshotID = nil
+		instance.UpdatedAt = time.Now()
+		if err := s.instanceRepo.Update(instance); err != nil {
+			return nil, fmt.Errorf("failed to update instance: %w", err)
+		}
+		return nil, nil
+	}
+
+	if _, err := s.openClawConfigService.EnsureSnapshotSecret(ctx, userID, instance, newSnapshot.ID); err != nil {
+		_ = s.openClawConfigService.MarkSnapshotFailed(newSnapshot, err)
+		return nil, fmt.Errorf("failed to update bootstrap secret: %w", err)
+	}
+
+	instance.OpenClawConfigSnapshotID = &newSnapshot.ID
+	instance.UpdatedAt = time.Now()
+	if err := s.instanceRepo.Update(instance); err != nil {
+		return nil, fmt.Errorf("failed to update instance: %w", err)
+	}
+
+	if err := s.openClawConfigService.MarkSnapshotActive(newSnapshot); err != nil {
+		return nil, fmt.Errorf("failed to activate snapshot: %w", err)
+	}
+
+	return newSnapshot, nil
+}
+
 func (s *instanceService) additionalServicePorts(primaryPort int32, instance *models.Instance) []int32 {
 	var ports []int32
 	if primaryPort == 3000 || primaryPort == 8082 {
 		ports = []int32{3000, 8082}
 	}
+	fmt.Printf("[additionalServicePorts] instance %d type=%s snapshotID=%v openClawConfigService=%v\n",
+		instance.ID, instance.Type, instance.OpenClawConfigSnapshotID, s.openClawConfigService != nil)
 	if strings.EqualFold(instance.Type, "openclaw") && s.openClawConfigService != nil && instance.OpenClawConfigSnapshotID != nil {
 		var resourceIDs []int
-		if snap, err := s.openClawConfigService.GetSnapshotModel(instance.UserID, *instance.OpenClawConfigSnapshotID); err == nil && snap != nil {
+		snap, err := s.openClawConfigService.GetSnapshotModel(instance.UserID, *instance.OpenClawConfigSnapshotID)
+		if err != nil {
+			fmt.Printf("[additionalServicePorts] GetSnapshotModel(user=%d, snapshot=%d) error: %v\n",
+				instance.UserID, *instance.OpenClawConfigSnapshotID, err)
+		} else if snap == nil {
+			fmt.Printf("[additionalServicePorts] GetSnapshotModel(user=%d, snapshot=%d) returned nil\n",
+				instance.UserID, *instance.OpenClawConfigSnapshotID)
+		} else {
+			fmt.Printf("[additionalServicePorts] snapshot %d resolvedResourcesJSON: %s\n",
+				snap.ID, snap.ResolvedResourcesJSON)
 			var refs []map[string]interface{}
 			if json.Unmarshal([]byte(snap.ResolvedResourcesJSON), &refs) == nil {
 				for _, r := range refs {
@@ -1155,10 +1249,15 @@ func (s *instanceService) additionalServicePorts(primaryPort int32, instance *mo
 				}
 			}
 		}
+		fmt.Printf("[additionalServicePorts] resolved resourceIDs: %v\n", resourceIDs)
 		if port := s.resolveClawWebPort(instance.UserID, resourceIDs); port > 0 {
+			fmt.Printf("[additionalServicePorts] claweb port resolved: %d\n", port)
 			ports = append(ports, port)
+		} else {
+			fmt.Printf("[additionalServicePorts] claweb port not found in resources\n")
 		}
 	}
+	fmt.Printf("[additionalServicePorts] final ports: %v\n", ports)
 	return ports
 }
 
@@ -1171,8 +1270,10 @@ func (s *instanceService) resolveClawWebPort(userID int, resourceIDs []int) int3
 	for _, id := range resourceIDs {
 		res, err := s.openClawConfigService.GetResource(userID, id)
 		if err != nil || res == nil {
+			fmt.Printf("[resolveClawWebPort] GetResource(user=%d, id=%d) err=%v res=%v\n", userID, id, err, res)
 			continue
 		}
+		fmt.Printf("[resolveClawWebPort] resource %d: type=%q key=%q\n", id, res.ResourceType, res.ResourceKey)
 		if strings.EqualFold(res.ResourceType, OpenClawConfigResourceTypeChannel) &&
 			strings.EqualFold(strings.TrimSpace(res.ResourceKey), "claweb") {
 			return parseClawWebListenPort(res.Content)

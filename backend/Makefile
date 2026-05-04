@@ -31,6 +31,20 @@ deps:
 fmt:
 	go fmt ./...
 
+# Format only changed Go files (compared to HEAD), supports Linux and Windows (pwsh)
+fmt-changed:
+ifeq ($(OS),Windows_NT)
+	@pwsh -Command "$$root = git rev-parse --show-toplevel; $$files = @(git diff HEAD --name-only --diff-filter=d -- '*.go'); if ($$files.Count -gt 0) { $$files | ForEach-Object { gofmt -w (Join-Path $$root $$_) }; Write-Host ('Formatted ' + $$files.Count + ' file(s)') } else { Write-Host 'No changed .go files to format' }"
+else
+	@root=$$(git rev-parse --show-toplevel); \
+	files=$$(git diff HEAD --name-only --diff-filter=d -- '*.go'); \
+	if [ -n "$$files" ]; then \
+		echo "$$files" | xargs -I{} gofmt -w "$$root/{}"; \
+	else \
+		echo "No changed .go files to format"; \
+	fi
+endif
+
 # Lint code
 lint:
 	golangci-lint run

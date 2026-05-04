@@ -7,6 +7,7 @@ import type {
   InstanceStatus,
   InstanceRuntimeDetails,
   InstanceConfigRevision,
+  InstanceChannelsResult,
 } from "../types/instance";
 import type { InstanceSkill } from "../types/skill";
 
@@ -175,5 +176,17 @@ export const instanceService = {
   listSkills: async (id: number): Promise<InstanceSkill[]> => {
     const response = await api.get(`/instances/${id}/skills`);
     return response.data.data;
+  },
+
+  getInstanceChannels: async (id: number): Promise<InstanceChannelsResult> => {
+    const response = await api.get(`/instances/${id}/channels`);
+    return response.data.data;
+  },
+
+  updateInstanceChannels: async (
+    id: number,
+    resourceIds: number[],
+  ): Promise<void> => {
+    await api.post(`/instances/${id}/channels`, { resource_ids: resourceIds });
   },
 };

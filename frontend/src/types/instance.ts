@@ -1,4 +1,4 @@
-import type { OpenClawConfigPlan } from "./openclawConfig";
+import type { OpenClawConfigPlan, OpenClawConfigResourceSummary } from "./openclawConfig";
 import type { InstanceSkill } from "./skill";
 
 export interface Instance {
@@ -142,6 +142,20 @@ export interface CreateInstanceRequest {
 export interface UpdateInstanceRequest {
   name?: string;
   description?: string;
+}
+
+export interface InstanceChannelItem {
+  id: number;
+  resource_type: string;
+  resource_key: string;
+  name: string;
+  enabled: boolean;
+  version: number;
+}
+
+export interface InstanceChannelsResult {
+  snapshot_id: number | null;
+  channels: OpenClawConfigResourceSummary[];
 }
 
 export interface InstanceListResponse {

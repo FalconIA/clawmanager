@@ -204,6 +204,8 @@ func main() {
 			instances.GET("/:id/skills", skillHandler.ListInstanceSkills)
 			instances.POST("/:id/skills", skillHandler.AttachSkillToInstance)
 			instances.DELETE("/:id/skills/:skillId", skillHandler.RemoveSkillFromInstance)
+			instances.GET("/:id/channels", instanceHandler.GetInstanceChannels)
+			instances.POST("/:id/channels", instanceHandler.UpdateInstanceChannels)
 		}
 
 		// Admin console: cross-user instance listing. Gated by admin
