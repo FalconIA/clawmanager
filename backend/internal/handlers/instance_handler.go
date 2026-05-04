@@ -53,7 +53,7 @@ func NewInstanceHandler(instanceService services.InstanceService, instanceAgentS
 		instanceCommandService:        instanceCommandService,
 		instanceConfigRevisionService: instanceConfigRevisionService,
 		accessService:                 accessService,
-		proxyService:                  services.NewInstanceProxyService(accessService),
+		proxyService:                  services.NewInstanceProxyService(accessService, instanceService),
 		openClawTransferService:       services.NewOpenClawTransferService(),
 		openClawConfigService:         openClawConfigService,
 		skillService:                  skillService,
@@ -885,6 +885,8 @@ func (h *InstanceHandler) ProxyInstance(c *gin.Context) {
 			http.Error(c.Writer, "Access token expired or invalid", http.StatusUnauthorized)
 		} else if err.Error() == "token does not match instance" {
 			http.Error(c.Writer, "Token does not match instance", http.StatusForbidden)
+		} else if errors.Is(err, services.ErrInstanceNotRunning) {
+			http.Error(c.Writer, "Instance is not running", http.StatusBadGateway)
 		} else {
 			http.Error(c.Writer, fmt.Sprintf("Failed to proxy request: %v", err), http.StatusBadGateway)
 		}

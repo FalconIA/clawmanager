@@ -1027,6 +1027,9 @@ export const translations: Record<Locale, TranslationTree> = {
       stop: "Stop",
       start: "Start",
       restart: "Restart",
+      stopRuntime: "Stop Gateway",
+      startRuntime: "Start Gateway",
+      restartRuntime: "Restart Gateway",
       delete: "Delete",
       cpu: "CPU",
       memory: "Memory",
@@ -2031,7 +2034,7 @@ export const translations: Record<Locale, TranslationTree> = {
       channelTemplate: "Channel Template",
       chooseStarterTemplate: "Choose a starter template",
       channelTemplateHint:
-        "Only Slack, Telegram, DingTalk, and Feishu are supported here. Start in form mode, then switch to JSON when you need the full config surface.",
+        "Only Slack, Telegram, DingTalk, Feishu, and CLAWeb are supported here. Start in form mode, then switch to JSON when you need the full config surface.",
       templateKey: "key: {key}",
       invalidChannelJson:
         "This channel JSON is currently invalid. Switch to JSON mode to fix it, then come back to the form.",
@@ -2069,6 +2072,11 @@ export const translations: Record<Locale, TranslationTree> = {
         plugin: "Plugin",
       },
       templates: {
+        claweb: {
+          label: "CLAWeb",
+          description:
+            "CLAWeb upstream plugin channel with per-account listener config.",
+        },
         telegram: {
           label: "Telegram",
           description:
@@ -2094,6 +2102,21 @@ export const translations: Record<Locale, TranslationTree> = {
         json: "JSON",
       },
       channelEditors: {
+        claweb: {
+          title: "CLAWeb Channel Editor",
+          description:
+            "Start with the auth token form, or switch to JSON when you need the full config surface.",
+          fields: {
+            authToken: {
+              label: "Auth Token",
+              placeholder: "upstream auth token",
+            },
+            listenPort: {
+              label: "Listen Port",
+              placeholder: "18999",
+            },
+          },
+        },
         dingtalkConnector: {
           title: "DingTalk Channel Editor",
           description:
@@ -2244,6 +2267,9 @@ export const translations: Record<Locale, TranslationTree> = {
       stop: "停止",
       start: "启动",
       restart: "重启",
+      stopRuntime: "停止网关",
+      startRuntime: "启动网关",
+      restartRuntime: "重启网关",
       delete: "删除",
       cpu: "CPU",
       memory: "内存",
@@ -3187,7 +3213,7 @@ export const translations: Record<Locale, TranslationTree> = {
       channelTemplate: "Channel 模板",
       chooseStarterTemplate: "选择起始模板",
       channelTemplateHint:
-        "这里只支持 Slack、Telegram、DingTalk 和飞书。先用表单模式快速填写，再在需要时切换到 JSON 查看完整配置。",
+        "这里只支持 Slack、Telegram、DingTalk、飞书和 ClaWeb。先用表单模式快速填写，再在需要时切换到 JSON 查看完整配置。",
       templateKey: "键：{key}",
       invalidChannelJson:
         "当前 Channel JSON 无法解析。请先切到 JSON 模式修复，再回到表单。",
@@ -3239,12 +3265,30 @@ export const translations: Record<Locale, TranslationTree> = {
           label: "飞书 / Lark",
           description: "带账号默认值的飞书 / Lark 通道。",
         },
+        claweb: {
+          label: "CLAWeb",
+          description: "支持账号独立监听配置的 CLAWeb 上游插件通道。",
+        },
       },
       editorModes: {
         form: "表单",
         json: "JSON",
       },
       channelEditors: {
+        claweb: {
+          title: "CLAWeb Channel 编辑器",
+          description: "先填写 Auth Token 表单，只有在需要完整配置时再切到 JSON。",
+          fields: {
+            authToken: {
+              label: "Auth Token",
+              placeholder: "上游认证令牌",
+            },
+            listenPort: {
+              label: "监听端口",
+              placeholder: "18999",
+            },
+          },
+        },
         dingtalkConnector: {
           title: "DingTalk Channel 编辑器",
           description:
@@ -3393,6 +3437,9 @@ export const translations: Record<Locale, TranslationTree> = {
       stop: "停止",
       start: "開始",
       restart: "再起動",
+      stopRuntime: "ゲートウェイ停止",
+      startRuntime: "ゲートウェイ開始",
+      restartRuntime: "ゲートウェイ再起動",
       delete: "削除",
       cpu: "CPU",
       memory: "メモリ",
@@ -4407,7 +4454,7 @@ export const translations: Record<Locale, TranslationTree> = {
       channelTemplate: "Channel テンプレート",
       chooseStarterTemplate: "スターターテンプレートを選択",
       channelTemplateHint:
-        "ここでは Slack、Telegram、DingTalk、Feishu に対応しています。まずフォームで入力し、必要になったら JSON に切り替えて完全な設定を編集してください。",
+        "ここでは Slack、Telegram、DingTalk、Feishu、ClaWeb に対応しています。まずフォームで入力し、必要になったら JSON に切り替えて完全な設定を編集してください。",
       templateKey: "キー: {key}",
       invalidChannelJson:
         "この Channel JSON は現在無効です。先に JSON モードで修正してからフォームに戻ってください。",
@@ -4445,6 +4492,10 @@ export const translations: Record<Locale, TranslationTree> = {
         plugin: "プラグイン",
       },
       templates: {
+        claweb: {
+          label: "CLAWeb",
+          description: "アカウントごとのリスナー設定に対応した CLAWeb 上流プラグインチャネル。",
+        },
         telegram: {
           label: "Telegram",
           description:
@@ -4469,6 +4520,21 @@ export const translations: Record<Locale, TranslationTree> = {
         json: "JSON",
       },
       channelEditors: {
+        claweb: {
+          title: "CLAWeb Channel エディタ",
+          description:
+            "まず Auth Token フォームから始め、完全な設定が必要なときだけ JSON に切り替えます。",
+          fields: {
+            authToken: {
+              label: "Auth Token",
+              placeholder: "上流認証トークン",
+            },
+            listenPort: {
+              label: "Listen Port",
+              placeholder: "18999",
+            },
+          },
+        },
         dingtalkConnector: {
           title: "DingTalk Channel エディタ",
           description:
@@ -4619,6 +4685,9 @@ export const translations: Record<Locale, TranslationTree> = {
       stop: "중지",
       start: "시작",
       restart: "재시작",
+      stopRuntime: "게이트웨이 중지",
+      startRuntime: "게이트웨이 시작",
+      restartRuntime: "게이트웨이 재시작",
       delete: "삭제",
       cpu: "CPU",
       memory: "메모리",
@@ -5615,7 +5684,7 @@ export const translations: Record<Locale, TranslationTree> = {
       channelTemplate: "Channel 템플릿",
       chooseStarterTemplate: "시작 템플릿 선택",
       channelTemplateHint:
-        "여기서는 Slack, Telegram, DingTalk, Feishu만 지원합니다. 먼저 폼 모드로 입력한 뒤, 전체 설정이 필요할 때 JSON으로 전환하세요.",
+        "여기서는 Slack, Telegram, DingTalk, Feishu, ClaWeb만 지원합니다. 먼저 폼 모드로 입력한 뒤, 전체 설정이 필요할 때 JSON으로 전환하세요.",
       templateKey: "키: {key}",
       invalidChannelJson:
         "현재 Channel JSON 이 유효하지 않습니다. 먼저 JSON 모드에서 수정한 뒤 폼으로 돌아오세요.",
@@ -5653,6 +5722,10 @@ export const translations: Record<Locale, TranslationTree> = {
         plugin: "플러그인",
       },
       templates: {
+        claweb: {
+          label: "CLAWeb",
+          description: "계정별 리스너 설정을 지원하는 CLAWeb 업스트림 플러그인 채널입니다.",
+        },
         telegram: {
           label: "Telegram",
           description:
@@ -5677,6 +5750,21 @@ export const translations: Record<Locale, TranslationTree> = {
         json: "JSON",
       },
       channelEditors: {
+        claweb: {
+          title: "CLAWeb Channel 편집기",
+          description:
+            "먼저 Auth Token 폼으로 시작하고, 전체 설정이 필요할 때만 JSON 으로 전환하세요.",
+          fields: {
+            authToken: {
+              label: "Auth Token",
+              placeholder: "업스트림 인증 토큰",
+            },
+            listenPort: {
+              label: "Listen Port",
+              placeholder: "18999",
+            },
+          },
+        },
         dingtalkConnector: {
           title: "DingTalk Channel 편집기",
           description:
@@ -5827,6 +5915,9 @@ export const translations: Record<Locale, TranslationTree> = {
       stop: "Stoppen",
       start: "Starten",
       restart: "Neustarten",
+      stopRuntime: "Gateway stoppen",
+      startRuntime: "Gateway starten",
+      restartRuntime: "Gateway neustarten",
       delete: "Löschen",
       cpu: "CPU",
       memory: "Speicher",
@@ -6853,7 +6944,7 @@ export const translations: Record<Locale, TranslationTree> = {
       channelTemplate: "Channel-Template",
       chooseStarterTemplate: "Starter-Template auswählen",
       channelTemplateHint:
-        "Hier werden nur Slack, Telegram, DingTalk und Feishu unterstützt. Starten Sie im Formularmodus und wechseln Sie erst zu JSON, wenn Sie die komplette Konfigurationsoberfläche brauchen.",
+        "Hier werden nur Slack, Telegram, DingTalk, Feishu und CLAWeb unterstützt. Starten Sie im Formularmodus und wechseln Sie erst zu JSON, wenn Sie die komplette Konfigurationsoberfläche brauchen.",
       templateKey: "Schlüssel: {key}",
       invalidChannelJson:
         "Dieses Channel-JSON ist derzeit ungültig. Wechseln Sie zuerst in den JSON-Modus, beheben Sie den Fehler und kehren Sie dann zum Formular zurück.",
@@ -6891,6 +6982,11 @@ export const translations: Record<Locale, TranslationTree> = {
         plugin: "Plugin",
       },
       templates: {
+        claweb: {
+          label: "CLAWeb",
+          description:
+            "CLAWeb-Upstream-Plugin-Channel mit kontospezifischer Listener-Konfiguration.",
+        },
         telegram: {
           label: "Telegram",
           description:
@@ -6916,6 +7012,21 @@ export const translations: Record<Locale, TranslationTree> = {
         json: "JSON",
       },
       channelEditors: {
+        claweb: {
+          title: "CLAWeb-Channel-Editor",
+          description:
+            "Beginnen Sie mit dem Auth-Token-Formular und wechseln Sie nur bei Bedarf zur vollständigen JSON-Konfiguration.",
+          fields: {
+            authToken: {
+              label: "Auth Token",
+              placeholder: "Upstream Auth-Token",
+            },
+            listenPort: {
+              label: "Listen Port",
+              placeholder: "18999",
+            },
+          },
+        },
         dingtalkConnector: {
           title: "DingTalk-Channel-Editor",
           description:

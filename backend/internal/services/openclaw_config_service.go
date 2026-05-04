@@ -242,6 +242,7 @@ type OpenClawConfigService interface {
 	EnsureSnapshotSecret(ctx context.Context, userID int, instance *models.Instance, snapshotID int) (string, error)
 	ListSnapshots(userID int, limit int) ([]OpenClawInjectionSnapshotPayload, error)
 	GetSnapshot(userID, id int) (*OpenClawInjectionSnapshotPayload, error)
+	GetSnapshotModel(userID, id int) (*models.OpenClawInjectionSnapshot, error)
 }
 
 type openClawConfigService struct {
@@ -857,6 +858,17 @@ func (s *openClawConfigService) GetSnapshot(userID, id int) (*OpenClawInjectionS
 	return &payload, nil
 }
 
+func (s *openClawConfigService) GetSnapshotModel(userID, id int) (*models.OpenClawInjectionSnapshot, error) {
+	item, err := s.repo.GetSnapshotByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if item == nil || item.UserID != userID {
+		return nil, fmt.Errorf("openclaw injection snapshot not found")
+	}
+	return item, nil
+}
+
 func (s *openClawConfigService) validateBundleRequest(userID int, req UpsertOpenClawConfigBundleRequest) error {
 	if strings.TrimSpace(req.Name) == "" {
 		return fmt.Errorf("openclaw config bundle name is required")
@@ -1372,6 +1384,8 @@ func appendCompiledOpenClawEnvPayload(payload interface{}, resource compiledOpen
 
 func normalizeOpenClawChannelConfigForEnv(resourceKey string, configPayload interface{}) interface{} {
 	switch strings.ToLower(strings.TrimSpace(resourceKey)) {
+	case "claweb":
+		return normalizeClawWebChannelConfigForEnv(configPayload)
 	case "dingtalk-connector":
 		return normalizeDingTalkChannelConfigForEnv(configPayload)
 	case "feishu":
@@ -1409,6 +1423,30 @@ func mergeOpenClawChannelConfigForStorage(resourceKey string, original, normaliz
 		merged[k] = v
 	}
 
+	if strings.ToLower(strings.TrimSpace(resourceKey)) == "claweb" {
+		originalAccounts, _ := originalMap["accounts"].(map[string]interface{})
+		normalizedAccounts, _ := normalizedMap["accounts"].(map[string]interface{})
+		if originalAccounts != nil || normalizedAccounts != nil {
+			mergedAccounts := make(map[string]interface{})
+			for k, v := range originalAccounts {
+				mergedAccounts[k] = v
+			}
+			if normalizedDefault, ok := normalizedAccounts["default"].(map[string]interface{}); ok {
+				mergedDefault := make(map[string]interface{})
+				if existingDefault, ok := originalAccounts["default"].(map[string]interface{}); ok {
+					for k, v := range existingDefault {
+						mergedDefault[k] = v
+					}
+				}
+				for k, v := range normalizedDefault {
+					mergedDefault[k] = v
+				}
+				mergedAccounts["default"] = mergedDefault
+			}
+			merged["accounts"] = mergedAccounts
+		}
+	}
+
 	if strings.ToLower(strings.TrimSpace(resourceKey)) == "feishu" {
 		originalAccounts, _ := originalMap["accounts"].(map[string]interface{})
 		normalizedAccounts, _ := normalizedMap["accounts"].(map[string]interface{})
@@ -1434,6 +1472,56 @@ func mergeOpenClawChannelConfigForStorage(resourceKey string, original, normaliz
 	}
 
 	return merged
+}
+
+func normalizeClawWebChannelConfigForEnv(configPayload interface{}) map[string]interface{} {
+	config, ok := configPayload.(map[string]interface{})
+	if !ok {
+		config = map[string]interface{}{}
+	}
+
+	accounts, _ := config["accounts"].(map[string]interface{})
+
+	var account map[string]interface{}
+	if defaultAccount, ok := accounts["default"].(map[string]interface{}); ok {
+		account = defaultAccount
+	} else {
+		account = map[string]interface{}{}
+	}
+
+	authToken, _ := account["authToken"].(string)
+	if authToken == "" {
+		authToken, _ = config["authToken"].(string)
+	}
+
+	var listenPort float64
+	if p, ok := account["listenPort"].(float64); ok {
+		listenPort = p
+	} else if p, ok := config["listenPort"].(float64); ok {
+		listenPort = p
+	} else {
+		listenPort = 18999
+	}
+
+	listenHost, _ := account["listenHost"].(string)
+	if listenHost == "" {
+		listenHost, _ = config["listenHost"].(string)
+	}
+	if listenHost == "" {
+		listenHost = "0.0.0.0"
+	}
+
+	return map[string]interface{}{
+		"enabled": true,
+		"accounts": map[string]interface{}{
+			"default": map[string]interface{}{
+				"enabled":    true,
+				"listenHost": listenHost,
+				"listenPort": listenPort,
+				"authToken":  authToken,
+			},
+		},
+	}
 }
 
 func normalizeFeishuChannelConfigForEnv(configPayload interface{}) map[string]interface{} {

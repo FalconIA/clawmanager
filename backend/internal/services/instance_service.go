@@ -336,7 +336,7 @@ func (s *instanceService) Create(userID int, req CreateInstanceRequest) (*models
 		InstanceName:    instance.Name,
 		UserID:          userID,
 		ContainerPort:   runtimeConfig.Port,
-		AdditionalPorts: additionalServicePorts(runtimeConfig.Port),
+		AdditionalPorts: s.additionalServicePorts(runtimeConfig.Port, instance),
 	}
 
 	serviceInfo, err := s.serviceService.CreateService(ctx, serviceConfig)
@@ -492,21 +492,17 @@ func (s *instanceService) Start(instanceID int) error {
 		return fmt.Errorf("failed to create pod: %w", err)
 	}
 
-	// Ensure Service exists (create if not exists)
-	serviceExists, _ := s.serviceService.ServiceExists(ctx, instance.UserID, instance.ID)
-	if !serviceExists {
-		serviceConfig := k8s.ServiceConfig{
-			InstanceID:      instance.ID,
-			InstanceName:    instance.Name,
-			UserID:          instance.UserID,
-			ContainerPort:   runtimeConfig.Port,
-			AdditionalPorts: additionalServicePorts(runtimeConfig.Port),
-		}
-		_, err = s.serviceService.CreateService(ctx, serviceConfig)
-		if err != nil {
-			fmt.Printf("Warning: failed to create service for instance %d: %v\n", instance.ID, err)
-			// Don't fail if service creation fails, pod is already running
-		}
+	// Create Service for the instance (Stop always deletes it, so always create here)
+	serviceConfig := k8s.ServiceConfig{
+		InstanceID:      instance.ID,
+		InstanceName:    instance.Name,
+		UserID:          instance.UserID,
+		ContainerPort:   runtimeConfig.Port,
+		AdditionalPorts: s.additionalServicePorts(runtimeConfig.Port, instance),
+	}
+	if _, svcErr := s.serviceService.CreateService(ctx, serviceConfig); svcErr != nil {
+		fmt.Printf("Warning: failed to create service for instance %d: %v\n", instance.ID, svcErr)
+		// Don't fail if service creation fails, pod is already running
 	}
 
 	// Update instance status
@@ -732,6 +728,11 @@ func (s *instanceService) Stop(instanceID int) error {
 	// Delete pod
 	if err := s.podService.DeletePod(ctx, instance.UserID, instance.ID); err != nil {
 		return fmt.Errorf("failed to delete pod: %w", err)
+	}
+
+	// Delete Service so it is recreated fresh on next Start
+	if err := s.serviceService.DeleteService(ctx, instance.UserID, instance.ID); err != nil {
+		fmt.Printf("Warning: failed to delete service for instance %d: %v\n", instance.ID, err)
 	}
 
 	// Update instance status
@@ -1137,10 +1138,70 @@ func (s *instanceService) ForceSyncInstance(instanceID int) error {
 	return nil
 }
 
-func additionalServicePorts(primaryPort int32) []int32 {
+func (s *instanceService) additionalServicePorts(primaryPort int32, instance *models.Instance) []int32 {
+	var ports []int32
 	if primaryPort == 3000 || primaryPort == 8082 {
-		return []int32{3000, 8082}
+		ports = []int32{3000, 8082}
 	}
+	if strings.EqualFold(instance.Type, "openclaw") && s.openClawConfigService != nil && instance.OpenClawConfigSnapshotID != nil {
+		var resourceIDs []int
+		if snap, err := s.openClawConfigService.GetSnapshotModel(instance.UserID, *instance.OpenClawConfigSnapshotID); err == nil && snap != nil {
+			var refs []map[string]interface{}
+			if json.Unmarshal([]byte(snap.ResolvedResourcesJSON), &refs) == nil {
+				for _, r := range refs {
+					if idFloat, ok := r["id"].(float64); ok {
+						resourceIDs = append(resourceIDs, int(idFloat))
+					}
+				}
+			}
+		}
+		if port := s.resolveClawWebPort(instance.UserID, resourceIDs); port > 0 {
+			ports = append(ports, port)
+		}
+	}
+	return ports
+}
 
-	return nil
+// resolveClawWebPort returns the claweb listenPort if any of the given resource IDs
+// is a claweb channel resource configured for an openclaw instance. Returns 0 if not found.
+func (s *instanceService) resolveClawWebPort(userID int, resourceIDs []int) int32 {
+	if s.openClawConfigService == nil || len(resourceIDs) == 0 {
+		return 0
+	}
+	for _, id := range resourceIDs {
+		res, err := s.openClawConfigService.GetResource(userID, id)
+		if err != nil || res == nil {
+			continue
+		}
+		if strings.EqualFold(res.ResourceType, OpenClawConfigResourceTypeChannel) &&
+			strings.EqualFold(strings.TrimSpace(res.ResourceKey), "claweb") {
+			return parseClawWebListenPort(res.Content)
+		}
+	}
+	return 0
+}
+
+// parseClawWebListenPort extracts listenPort from a claweb channel ContentJSON.
+// Checks accounts.default.listenPort first, then top-level listenPort.
+// Falls back to the default port 18999 if the resource is present but has no explicit port.
+func parseClawWebListenPort(content json.RawMessage) int32 {
+	const defaultClawWebPort int32 = 18999
+	if len(content) == 0 {
+		return defaultClawWebPort
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(content, &cfg); err != nil {
+		return defaultClawWebPort
+	}
+	if accounts, ok := cfg["accounts"].(map[string]interface{}); ok {
+		if def, ok := accounts["default"].(map[string]interface{}); ok {
+			if p, ok := def["listenPort"].(float64); ok && p > 0 {
+				return int32(p)
+			}
+		}
+	}
+	if p, ok := cfg["listenPort"].(float64); ok && p > 0 {
+		return int32(p)
+	}
+	return defaultClawWebPort
 }

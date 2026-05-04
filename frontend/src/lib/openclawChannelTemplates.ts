@@ -31,6 +31,17 @@ const createChannelTemplate = (
 });
 
 export const OPENCLAW_CHANNEL_TEMPLATES: OpenClawChannelTemplate[] = [
+  createChannelTemplate('claweb', 'CLAWeb', 'CLAWeb upstream plugin channel with per-account listener config.', 'plugin', {
+    enabled: true,
+    accounts: {
+      default: {
+        enabled: true,
+        listenHost: '0.0.0.0',
+        listenPort: 18999,
+        authToken: '',
+      },
+    },
+  }),
   createChannelTemplate('telegram', 'Telegram', 'Telegram Bot API channel with DM and group policy controls.', 'builtin', {
     enabled: true,
     botToken: '',

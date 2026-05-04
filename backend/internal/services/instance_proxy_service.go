@@ -19,16 +19,20 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// ErrInstanceNotRunning is returned by the proxy when the target instance is not running.
+var ErrInstanceNotRunning = fmt.Errorf("instance is not running")
+
 // InstanceProxyService handles proxying requests to instance pods
 type InstanceProxyService struct {
-	serviceService *k8s.ServiceService
-	accessService  *InstanceAccessService
-	httpClient     *http.Client
-	serviceCache   map[serviceCacheKey]serviceCacheEntry
-	serviceLookups map[serviceCacheKey]*serviceLookupCall
-	cacheMu        sync.RWMutex
-	lookupMu       sync.Mutex
-	serviceTTL     time.Duration
+	serviceService  *k8s.ServiceService
+	instanceService InstanceService
+	accessService   *InstanceAccessService
+	httpClient      *http.Client
+	serviceCache    map[serviceCacheKey]serviceCacheEntry
+	serviceLookups  map[serviceCacheKey]*serviceLookupCall
+	cacheMu         sync.RWMutex
+	lookupMu        sync.Mutex
+	serviceTTL      time.Duration
 }
 
 type serviceCacheKey struct {
@@ -51,7 +55,7 @@ type serviceLookupCall struct {
 const defaultServiceCacheTTL = 30 * time.Second
 
 // NewInstanceProxyService creates a new instance proxy service
-func NewInstanceProxyService(accessService *InstanceAccessService) *InstanceProxyService {
+func NewInstanceProxyService(accessService *InstanceAccessService, instanceService InstanceService) *InstanceProxyService {
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
@@ -64,8 +68,9 @@ func NewInstanceProxyService(accessService *InstanceAccessService) *InstanceProx
 	}
 
 	return &InstanceProxyService{
-		serviceService: k8s.NewServiceService(),
-		accessService:  accessService,
+		serviceService:  k8s.NewServiceService(),
+		instanceService: instanceService,
+		accessService:   accessService,
 		httpClient: &http.Client{
 			Transport: transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -397,7 +402,15 @@ func (s *InstanceProxyService) getOrCreateService(ctx context.Context, userID, i
 		return cloneServiceInfo(serviceInfo), nil
 	}
 
-	// Try to get existing service
+	// Service not found — only recreate if the instance is actually running.
+	if s.instanceService != nil {
+		inst, instErr := s.instanceService.GetByID(instanceID)
+		if instErr != nil || inst == nil || inst.Status != "running" {
+			call.err = ErrInstanceNotRunning
+			return nil, ErrInstanceNotRunning
+		}
+	}
+
 	serviceConfig := k8s.ServiceConfig{
 		InstanceID:      instanceID,
 		InstanceName:    fmt.Sprintf("instance-%d", instanceID),

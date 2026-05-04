@@ -60,6 +60,7 @@ const SNAPSHOT_STATUS_I18N_KEYS: Record<string, string> = {
 };
 
 const CHANNEL_TEMPLATE_LABEL_I18N_KEYS: Record<string, string> = {
+  claweb: "openClawResourcesPage.templates.claweb.label",
   telegram: "openClawResourcesPage.templates.telegram.label",
   "dingtalk-connector":
     "openClawResourcesPage.templates.dingtalkConnector.label",
@@ -68,6 +69,7 @@ const CHANNEL_TEMPLATE_LABEL_I18N_KEYS: Record<string, string> = {
 };
 
 const CHANNEL_TEMPLATE_DESCRIPTION_I18N_KEYS: Record<string, string> = {
+  claweb: "openClawResourcesPage.templates.claweb.description",
   telegram: "openClawResourcesPage.templates.telegram.description",
   "dingtalk-connector":
     "openClawResourcesPage.templates.dingtalkConnector.description",
@@ -165,6 +167,7 @@ const mergeTagText = (current: string, additions: string[]): string =>
 type ChannelEditorMode = "form" | "json";
 
 type SupportedChannelEditorId =
+  | "claweb"
   | "dingtalk-connector"
   | "feishu"
   | "slack"
@@ -264,6 +267,79 @@ const buildChannelEnvelopeForRequest = (
     dependsOn: [],
     config,
   };
+};
+
+const readClawebChannelFormState = (
+  contentText: string,
+): Record<string, string> | null => {
+  const config = parseChannelContentText(contentText);
+  if (!config) {
+    return null;
+  }
+
+  const accounts = isRecord(config.accounts) ? config.accounts : null;
+  const defaultAccount =
+    accounts && isRecord(accounts.default) ? accounts.default : null;
+
+  return {
+    authToken:
+      defaultAccount && typeof defaultAccount.authToken === "string"
+        ? defaultAccount.authToken
+        : typeof config.authToken === "string"
+          ? config.authToken
+          : "",
+    listenPort:
+      defaultAccount && typeof defaultAccount.listenPort === "number"
+        ? String(defaultAccount.listenPort)
+        : typeof config.listenPort === "number"
+          ? String(config.listenPort)
+          : "18999",
+  };
+};
+
+const updateClawebChannelContentText = (
+  contentText: string,
+  patch: Record<string, string>,
+): string => {
+  const parsed = parseChannelContentText(contentText);
+  if (!parsed) {
+    return contentText;
+  }
+
+  const currentForm = readClawebChannelFormState(contentText);
+  if (!currentForm) {
+    return contentText;
+  }
+
+  const nextForm = {
+    ...currentForm,
+    ...patch,
+  };
+
+  const existingAccounts = isRecord(parsed.accounts) ? parsed.accounts : {};
+  const existingDefault = isRecord(existingAccounts.default)
+    ? existingAccounts.default
+    : {};
+  const listenPort = parseInt(nextForm.listenPort, 10);
+  const allowlisted = {
+    enabled: true,
+    accounts: {
+      ...existingAccounts,
+      default: {
+        ...existingDefault,
+        enabled: true,
+        listenHost:
+          typeof existingDefault.listenHost === "string" &&
+          existingDefault.listenHost
+            ? existingDefault.listenHost
+            : "0.0.0.0",
+        listenPort: Number.isNaN(listenPort) ? 18999 : listenPort,
+        authToken: nextForm.authToken,
+      },
+    },
+  };
+
+  return stringifyChannelContentText(mergeChannelConfig(parsed, allowlisted));
 };
 
 const readTelegramChannelFormState = (
@@ -499,6 +575,9 @@ const detectSupportedChannelEditor = (
   const hasAppToken = config && typeof config.appToken === "string";
   const hasBotToken = config && typeof config.botToken === "string";
 
+  if (normalizedResourceKey === "claweb" || normalizedResourceKey === "claweb-connector") {
+    return "claweb";
+  }
   if (normalizedResourceKey === "feishu" || domain === "feishu" || !!accounts) {
     return "feishu";
   }
@@ -538,6 +617,12 @@ const normalizeResourceContentTextForEditor = (
     resourceKey,
     normalizedContentText,
   );
+  if (editorId === "claweb") {
+    const currentForm = readClawebChannelFormState(normalizedContentText);
+    return currentForm
+      ? updateClawebChannelContentText(normalizedContentText, currentForm)
+      : normalizedContentText;
+  }
   if (editorId === "feishu") {
     const currentForm = readFeishuChannelFormState(normalizedContentText);
     return currentForm
@@ -570,6 +655,29 @@ const SUPPORTED_CHANNEL_EDITORS: Record<
   SupportedChannelEditorId,
   SupportedChannelEditorDefinition
 > = {
+  claweb: {
+    id: "claweb",
+    titleKey: "openClawResourcesPage.channelEditors.claweb.title",
+    descriptionKey: "openClawResourcesPage.channelEditors.claweb.description",
+    fields: [
+      {
+        key: "authToken",
+        labelKey:
+          "openClawResourcesPage.channelEditors.claweb.fields.authToken.label",
+        placeholderKey:
+          "openClawResourcesPage.channelEditors.claweb.fields.authToken.placeholder",
+      },
+      {
+        key: "listenPort",
+        labelKey:
+          "openClawResourcesPage.channelEditors.claweb.fields.listenPort.label",
+        placeholderKey:
+          "openClawResourcesPage.channelEditors.claweb.fields.listenPort.placeholder",
+      },
+    ],
+    readFormState: readClawebChannelFormState,
+    updateContentText: updateClawebChannelContentText,
+  },
   "dingtalk-connector": {
     id: "dingtalk-connector",
     titleKey: "openClawResourcesPage.channelEditors.dingtalkConnector.title",
